@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منصة صِدق | التحليل</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <canvas id="bg-canvas"></canvas> 
+    
+    <div class="navbar">
+        <a href="index.html"> التحليل الفوري للصور</a>
+        <a href="payment.html"> الترقية والاشتراك</a>
+    </div>
+
+    <div class="container">
+        
+        <header>
+            <div class="logo-container">
+                <img src="logo.png" alt="شعار منصة صدق" class="logo">
+            </div>
+            
+            <h1 style="text-align: center;"> منصة صِدق | التحقق من أصالة الصور الرقمية</h1>
+            <p style="text-align: center; color: var(--color-primary); font-weight: 700; font-size: 1.1rem;">صِدق لعين واعية</p>
+        </header>
+
+        <section id="analysis-upload" class="card">
+            <h2>تحميل الصورة للتحقق</h2>
+            <form id="upload-form">
+                <input type="file" name="image" id="image-upload" accept="image/*" class="input-file">
+                <label for="image-upload" class="custom-file-upload">
+                    اختيار صورة (.JPG, .PNG)
+                </label>
+                <div style="margin-top: 15px; text-align: center;">
+                    <button type="submit" id="analyze-btn" class="btn-primary">
+                        بدء التحليل
+                    </button>
+                    <div id="loading-spinner" class="spinner hidden"></div>
+                <div id="tries-status" style="text-align: center; margin-top: 15px; font-weight: 700; color: var(--color-primary);">
+    </div>
+                </div>
+            </form>
+        </section>
+
+        <section id="analysis-results" class="hidden">
+            <h2 style="text-align: center;">نتائج التحليل الجنائي</h2>
+            
+            <div class="card" id="exif-data">
+                <h5>بيانات الصورة الوصفية (EXIF)</h5>
+                <p id="exif-message">جاري تحميل البيانات...</p>
+            </div>
+            
+            <div class="result-images-grid">
+                <div class="result-image-card">
+                    <img id="original-image-preview" src="#" alt="الصورة الأصلية" style="display:none; max-height: 250px;">
+                    <p class="result-verdict">الصورة الأصلية المُحمّلة.</p>
+                </div>
+                
+                <div class="result-image-card">
+                    <img id="ela-image" src="#" alt="صورة ELA">
+                    <p id="ela-message" class="result-verdict">صورة تحليل مستوى الخطأ المتساوي (ELA).</p>
+                </div>
+
+                <div class="result-image-card">
+                    <img id="prnu-image" src="#" alt="صورة PRNU">
+                    <p id="prnu-message" class="result-verdict">نمط ضوضاء PRNU (تقريب).</p>
+                </div>
+                
+                <div class="result-image-card">
+                    <img id="gradcam-image" src="#" alt="خريطة Grad-CAM">
+                    <p id="gradcam-message" class="result-verdict">المناطق التي ركز عليها النموذج.</p>
+                </div>
+            </div>
+            
+            <div class="score-summary-grid">
+                <div class="result-score-card final-verdict">
+                    <h5>القرار النهائي</h5>
+                    <div id="final-verdict-msg" class="score-indicator">جاري التقييم...</div>
+                </div>
+                
+                <div class="result-score-card">
+                    <h5>درجة ELA</h5>
+                    <div id="ela-score-display" class="score-indicator">--%</div>
+                    <p id="ela-score-msg" class="result-verdict-small">رسالة ELA</p>
+                </div>
+                
+                <div class="result-score-card">
+                    <h5>درجة PRNU</h5>
+                    <div id="prnu-score-display" class="score-indicator">--%</div>
+                    <p id="prnu-analysis-msg" class="result-verdict-small">رسالة PRNU</p>
+                </div>
+                
+                <div class="result-score-card">
+                    <h5>درجة الذكاء الاصطناعي</h5>
+                    <div id="ai-score-display" class="score-indicator">--%</div>
+                    <p id="ai-analysis-result" class="result-verdict-small">رسالة AI</p>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin-top: 30px;">
+                <button id="download-report-btn" class="btn-primary hidden">تحميل تقرير PDF مفصل</button>
+            </div>
+        </section>
+
+    </div>
+
+    <script src="scripts.js"></script> 
+</body>
+</html>

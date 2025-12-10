@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>منصة صِدق | الاشتراكات</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+        .plan-card {
+            background-color: var(--color-secondary-background);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .plan-card:hover {
+            border-color: var(--color-primary);
+            transform: translateY(-5px);
+        }
+        .plan-card h3 {
+            color: var(--color-primary);
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+        }
+        .plan-card .price {
+            font-size: 2.5rem;
+            font-weight: 900;
+            margin-bottom: 20px;
+            color: var(--color-text);
+        }
+        .plan-card ul {
+            list-style: none;
+            padding: 0;
+            text-align: right;
+            margin-bottom: 20px;
+        }
+        .plan-card ul li {
+            padding: 8px 0;
+            border-bottom: 1px dashed rgba(221, 197, 168, 0.2);
+            font-size: 1rem;
+            color: var(--color-text);
+        }
+        .plan-card ul li::before {
+            content: "✓ ";
+            color: var(--color-primary);
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .plan-card.free-plan {
+            background-color: var(--color-background);
+            border-color: var(--color-hint);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="navbar">
+        <a href="index.html"> التحليل الفوري للصور</a>
+        <a href="payment.html"> الترقية والاشتراك</a>
+    </div>
+
+    <div class="container">
+        
+        <header style="text-align: center;">
+            <h1 style="text-align: center;"> خطط التسعير واستخدام منصة صِدق</h1>
+            <p style="text-align: center; color: var(--color-primary); font-size: 1.1rem;">اختر الخطة التي تناسب احتياجاتك من حيث عدد المحاولات وتقارير التحليل.</p>
+        </header>
+
+        <div class="pricing-grid">
+
+            <div class="plan-card free-plan">
+                <h3>مجانية - تجريبية</h3>
+                <div class="price">0 ر.س</div>
+                
+                <ul>
+                    <li>✅ **محاولة تحليل واحدة (تجارب)**</li>
+                    <li>✅ نتائج تحليل ELA و PRNU الأساسية</li>
+                    <li>❌ تقارير PDF مفصلة</li>
+                    <li>❌ دعم فني</li>
+                </ul>
+                <button class="btn-primary" style="background-color: #6D7F64; color: var(--color-text); cursor: default;">الخطة الحالية</button>
+            </div>
+
+            <div class="plan-card">
+                <h3>حزمة البداية</h3>
+                <div class="price">50 ر.س</div>
+                
+                <ul>
+                    <li>✅ **5 محاولات تحليل (صالح لـ 30 يوم)**</li>
+                    <li>✅ نتائج تحليل ELA و PRNU و AI</li>
+                    <li>✅ إمكانية تحميل تقارير مبدئية (PDF)</li>
+                    <li>❌ دعم فني متخصص</li>
+                </ul>
+                <button onclick="document.getElementById('payment-modal').scrollIntoView();" class="btn-primary" style="width: 100%;">اشترك الآن بـ 50 ر.س</button>
+            </div>
+
+            <div class="plan-card" style="border-color: var(--color-success);">
+                <h3>الخطة المتقدمة</h3>
+                <div class="price">200 ر.س</div>
+                
+                <ul>
+                    <li>✅ **200 محاولة تحليل (صالح لـ 90 يوم)**</li>
+                    <li>✅ كافة مزايا التحليل بما في ذلك Grad-CAM</li>
+                    <li>✅ تقارير رسمية مختومة (لأغراض قانونية)</li>
+                    <li>✅ دعم فني سريع</li>
+                </ul>
+                <button onclick="document.getElementById('payment-modal').scrollIntoView();" class="btn-primary" style="width: 100%;">اشترك الآن بـ 200 ر.س</button>
+            </div>
+
+        </div> <hr style="border-color: var(--color-primary); margin: 60px 0;">
+
+        <div class="card" id="payment-modal">
+            <h2>إتمام عملية الاشتراك</h2>
+            <form id="payment-form">
+                <label for="plan_select">اختيار الباقة</label>
+                <select id="plan_select" required>
+                    <option value="">-- اختر باقتك --</option>
+                    <option value="50_riyal">حزمة البداية (5 محاولات) - 50 ر.س</option>
+                    <option value="200_riyal">الخطة المتقدمة (200 محاولة) - 200 ر.س</option>
+                </select>
+
+                <label for="card_holder">اسم حامل البطاقة</label>
+                <input type="text" id="card_holder" placeholder="الاسم الظاهر على البطاقة" required>
+            
+                <label for="card_num">رقم البطاقة</label>
+                <input type="text" id="card_num" placeholder="0000 0000 0000 0000" maxlength="16" required>
+                
+                <div class="input-group" style="display: flex; gap: 20px;">
+                    <div style="flex-grow: 1;">
+                        <label for="exp_date">تاريخ الانتهاء</label>
+                        <input type="text" id="exp_date" placeholder="MM/YY" maxlength="5" required>
+                    </div>
+                    <div style="flex-grow: 1;">
+                        <label for="cvv">رمز التحقق (CVV)</label>
+                        <input type="password" id="cvv" placeholder="123" maxlength="4" required>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary" style="width: 100%; margin-top: 20px;">إتمام الاشتراك الآن</button>
+            </form>
+            <p style="text-align: center; font-size: 0.9rem; color: var(--color-hint); margin-top: 15px;">**ملحوظة:** هذا النموذج هو محاكاة لأغراض العرض التقديمي (الـ Demo).</p>
+        </div>
+
+    </div>
+
+    <script src="scripts.js"></script> 
+
+    <script>
+        document.getElementById('payment-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const selectedPlan = document.getElementById('plan_select').value;
+            if (!selectedPlan) {
+                alert('الرجاء اختيار باقة الدفع أولاً.');
+                return;
+            }
+            alert(`تمت محاكاة عملية الاشتراك بنجاح للباقة: ${selectedPlan}! شكراً لترقيتك.`);
+        });
+    </script>
+
+</body>
+</html>
