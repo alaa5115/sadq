@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>محاكي أبشر: خدمة التحقق الأمني</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css"> 
+    <style>
+        /* ==================================== */
+        /* تنسيق خاص بصفحة محاكاة أبشر (الستايل الجديد) */
+        /* ==================================== */
+        
+        :root {
+            /* الألوان الجديدة المستوحاة من الصورة: الأخضر الرسمي والأبيض */
+            --abshr-main-color: #008953; /* أخضر غامق رسمي */
+            --abshr-header-bg: #FFFFFF;  /* خلفية رأس الصفحة بيضاء */
+            --abshr-header-text: #000000;/* نص أسود */
+            --abshr-title-color: #333333;/* لون العناوين */
+            --abshr-card-bg: #F8F8F8;   /* خلفية فاتحة للبطاقات */
+        }
+        
+        /* إعادة تعيين خلفية الجسم لتكون بيضاء أو فاتحة جداً لهذه الصفحة */
+        body {
+            background-color: #F8F8F8;
+            color: var(--abshr-title-color);
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        /* رأس الصفحة الجديد (شعار حفز/2030) */
+        .abshr-header-new {
+            background-color: var(--abshr-header-bg);
+            padding: 15px 0;
+            margin-bottom: 20px;
+            border-bottom: 3px solid var(--abshr-main-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .abshr-header-new .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--abshr-main-color);
+        }
+        .abshr-header-new .menu-links {
+            display: flex;
+            gap: 15px;
+        }
+        .abshr-header-new .menu-links a {
+            color: #666;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+
+        /* بطاقة التحميل (مستوحاة من الصورة) */
+        .upload-card-new {
+            background-color: white;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #E0E0E0;
+            box-shadow: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .file-upload-area {
+            background-color: var(--abshr-card-bg);
+            border: 2px dashed #BDBDBD;
+            border-radius: 10px;
+            padding: 40px 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-bottom: 20px;
+        }
+        .file-upload-area:hover {
+            background-color: #F0F0F0;
+        }
+        .file-upload-area h4 {
+            color: #666;
+            margin: 0 0 5px 0;
+        }
+        .file-upload-area p {
+            font-size: 0.9rem;
+            color: #999;
+        }
+
+        /* قسم الرسائل التحذيرية */
+        .alert-info {
+            background-color: #E6F7FF;
+            color: #0076B6;
+            border: 1px solid #91D5FF;
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 20px;
+            font-size: 0.9rem;
+            text-align: right;
+        }
+
+        /* قسم النتائج (لتتبع القرار) */
+        .abshr-results-new {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px dashed #DDD;
+        }
+        .abshr-results-new h3 {
+            color: var(--abshr-title-color);
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+        .abshr-score-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #EEE;
+            font-size: 1rem;
+            color: #666;
+        }
+        .abshr-score-display span {
+            font-weight: 700;
+            color: var(--abshr-main-color);
+        }
+
+        /* ألوان الأزرار في هذا السياق */
+        .btn-abshr-primary {
+            background-color: var(--abshr-main-color);
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn-abshr-primary:hover {
+            background-color: #006b3e;
+        }
+        .btn-abshr-report {
+            background-color: #C0392B; /* لون أحمر للبلاغ الأمني */
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        /* رسائل القرار النهائي */
+        .verdict-box {
+            background-color: #FFF;
+            padding: 20px;
+            border-radius: 10px;
+            border-right: 5px solid;
+            margin-top: 20px;
+            text-align: right;
+        }
+        .verdict-clean { border-color: var(--color-success); }
+        .verdict-tainted { border-color: var(--color-error); }
+        .verdict-caution { border-color: var(--color-caution); }
+
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        
+        <header class="abshr-header-new">
+            <div class="menu-links">
+                <a href="#">☰</a>
+                <a href="#">English</a>
+            </div>
+            <div class="logo-container">
+                <span style="font-size: 0.8rem; color: #666;">صِدق</span>
+                <span style="font-size: 1.8rem; font-weight: 900;">حفز</span>
+                <img src="https://upload.wikimedia.org/wikipedia/commons/e/e0/Vision_2030_Logo.svg" alt="رؤية 2030" style="height: 30px;"> 
+            </div>
+        </header>
+
+        <h2 style="text-align: center; color: var(--abshr-title-color);">تحليل آمن وموثوق من أبشر</h2>
+
+        <section id="abshr-upload-section" class="upload-card-new">
+            
+            <form id="abshr-upload-form" enctype="multipart/form-data">
+                
+                <div class="file-upload-area" onclick="document.getElementById('image-upload').click()">
+                    <h4>تحميل صورة</h4>
+                    <p>لواصف الملفات المقبولة (JPG, PNG)</p>
+                    <input type="file" id="image-upload" name="image" accept="image/jpeg,image/png" required style="display: none;">
+                </div>
+                
+                <div class="alert-info" id="status-message">
+                    تحقيق أمني للملفات المُرسلة. التحليل يجري على خوادم صِدق.
+                </div>
+
+                <button type="submit" id="check-btn" class="btn-abshr-primary" style="width: 100%; margin-top: 20px;">
+                    بدء التحليل الأمني (Check)
+                </button>
+            </form>
+            
+            <div id="loading-spinner" class="spinner-border text-primary hidden" role="status" style="margin-top: 20px;"></div>
+        </section>
+
+      <section id="abshr-results" class="abshr-results-new hidden">
+    
+    <div class="verdict-box" id="verdict-container">
+        <h3 class="verdict-title">القرار الأمني النهائي</h3>
+        <p class="verdict-message" id="final-verdict-message" style="font-weight: 700; margin-bottom: 10px;">جاري تحليل البيانات...</p>
+        
+        <div class="abshr-score-display">
+            درجة الثقة في أصالة الوثيقة (Sidq Score)
+            <span id="confidence-score">--%</span>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button id="download-report-btn" class="btn-abshr-primary hidden" style="flex-grow: 1;">تحميل تقرير الأدلة الجنائية (مختوم)</button>
+            <button id="file-report-btn" class="btn-abshr-report hidden" style="flex-grow: 1;">تقديم بلاغ أمني فوري 🚨</button>
+        </div>
+    </div>
+</section>
+
+        <p style="text-align: center; font-size: 0.8rem; color: #AAA; margin-top: 30px;">&copy; 2025 absher.sa</p>
+
+    </div>
+
+    <script src="scripts.js"></script>
+
+    <script>
+        // هذا الكود يضيف وظيفة اختيار الملف بالضغط على منطقة التحميل
+        document.querySelector('.file-upload-area').addEventListener('click', function() {
+            document.getElementById('image-upload').click();
+        });
+        
+        // يعرض اسم الملف المختار في منطقة التحميل
+        document.getElementById('image-upload').addEventListener('change', function() {
+            const fileName = this.files.length > 0 ? this.files[0].name : 'تحميل صورة';
+            document.querySelector('.file-upload-area h4').textContent = fileName;
+        });
+    </script>
+</body>
+</html>
