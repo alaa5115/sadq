@@ -1,523 +1,294 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, session 
 from flask_cors import CORS 
 from werkzeug.exceptions import RequestEntityTooLarge 
 import io
 import os
 import datetime
 import base64
-from PIL import Image, ImageChops # ImageChops ضرورية لـ ELA
-from PIL.ExifTags import TAGS
+from PIL import Image
 import numpy as np
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from flask import Flask, request, jsonify, send_file, session # <-- إضافة session
-from flask_cors import CORS 
-# ... (باقي الاستيرادات)
 
-app = Flask(__name__)
-# ⚠️ **هام:** يجب تعيين مفتاح سري لجلسات Flask (استبدل 'your_secret_key_here' بشيء فريد وآمن)
-app.secret_key = 'your_strong_and_unique_secret_key_here_for_security' 
-# ... (باقي إعدادات Flask)
-
-# =========================================================
-# 1. التحصين: استيراد ملفات التحليل مع دوال احتياطية (Fallbacks)
-# =========================================================
-
-# استيراد أدوات التحليل AI
+# استيراد دالة التحليل
 try:
-    from ai_forensics import analyze_with_ai, build_forensics_model
+    from ai_forensics import analyze_full_forensics
+except ImportError:
+    print("FATAL ERROR: Could not import ai_forensics.py. Analysis will fail.")
+    def analyze_full_forensics(image_stream):
+        return {'abshr_verdict': 'ERROR', 'final_score': 0, 'ai_score': 0, 'prnu_score': 0, 'ela_score': 0, 'ai_verdict': 'فشل حاد في تحميل دالة التحليل.', 'prnu_verdict': '', 'ela_verdict': '', 'metadata': {}, 'prnu_img_base64': None, 'ela_img_base64': None, 'gradcam_img_base64': None, 'original_img_base64': None}
+
+def clean_for_json(data):
+    """
+    تحويل أنواع بيانات NumPy إلى أنواع قياسية في Python يمكن لـ JSON التعامل معها.
+    """
+    if isinstance(data, dict):
+        return {k: clean_for_json(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_for_json(item) for item in data]
+    elif isinstance(data, (np.float32, np.float64)):
+        # 🌟🌟🌟 الإصلاح 2: تحويل Float32 إلى Float قياسي 🌟🌟🌟
+        return float(data)
+    else:
+        return data
+# =========================================================
+# 1. إعدادات وتكوين التطبيق
+# =========================================================
+
+app = Flask(__name__) 
+CORS(app) 
+# يجب أن يكون المفتاح السري موجوداً لتمكين الجلسات (session)
+app.secret_key = os.environ.get("SECRET_KEY", 'a_secure_secret_key_for_sidq') 
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 # 5 ميجابايت
+
+# =========================================================
+# 2. إعدادات التقرير (ReportLab)
+# =========================================================
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.lib.utils import ImageReader
+    from reportlab.lib import colors
     
-    print("⏳ جاري بناء نموذج الذكاء الاصطناعي...")
-    # بناء النموذج عالمياً عند بدء التشغيل
-    GLOBAL_AI_MODEL = build_forensics_model()
-    # إذا كان لديك ملف أوزان، قم بإلغاء التعليق عن السطر التالي:
-    # GLOBAL_AI_MODEL.load_weights('model_weights.h5')
-    print("✅ تم إعداد النموذج (استخدام أوزان عشوائية/أوزان محملة).")
-    
-except ImportError as e:
-    print(f"WARNING: فشل استيراد وحدة الذكاء الاصطناعي: {e}")
-    # دالة احتياطية تقبل 3 وسائط وترجع 4 قيم
-    def analyze_with_ai(image_stream, global_model, ela_weight, prnu_score):
-        return 0.0, f"❌ خطأ: فشل تحميل نموذج الذكاء الاصطناعي. {str(e)}", None, 0.0
-
-# استيراد أدوات التحليل PRNU
-try:
-    from prnu_analysis import extract_noise_pattern
-except ImportError as e:
-    print(f"WARNING: فشل استيراد وحدة PRNU: {e}")
-    # دالة احتياطية ترجع 3 قيم
-    def extract_noise_pattern(image_stream):
-        return f"❌ خطأ: فشل تحميل وحدة PRNU. {str(e)}", 0.0, None
-
-
-# =========================================================
-# 2. إعداد ReportLab ودعم اللغة العربية (Tajawal)
-# =========================================================
-
-try:
-    # يجب أن يكون ملف الخط 'Tajawal-Bold.ttf' موجوداً في نفس المجلد
+    # ⚠️ **هام:** يجب أن يكون ملف الخط 'Tajawal-Bold.ttf' موجوداً
     pdfmetrics.registerFont(TTFont('Tajawal', 'Tajawal-Bold.ttf'))
     ARABIC_FONT = 'Tajawal'
 except Exception as e:
-    print(f"WARNING: فشل تحميل خط Tajawal: {e}. سيتم استخدام الخط الافتراضي.")
+    print(f"WARNING: فشل تحميل خط Tajawal أو ReportLab: {e}. سيتم استخدام الخط الافتراضي.")
     ARABIC_FONT = 'Helvetica'
 
-@app.route('/api/analyze', methods=['POST'])
-def analyze_endpoint():
-    """نقطة نهاية لتحليل الصورة."""
 
-    # ----------------------------------------------
-    # 🌟 منطق التحقق من المحاولات المجانية 🌟
-    # ----------------------------------------------
-    # الحد الأقصى للمحاولات المجانية
-    FREE_TRIES_LIMIT = 1 
-    
-    # التحقق من عدد المحاولات المتبقية في الجلسة (Session)
-    if 'tries_left' not in session:
-        session['tries_left'] = FREE_TRIES_LIMIT
-    
-    tries_left = session['tries_left']
-
-    if tries_left <= 0:
-        # إذا انتهت المحاولات
-        error_message = "⚠️ انتهت محاولتك المجانية. الرجاء الترقية/الاشتراك للمزيد من التحليلات."
-        print("❌ DENIED: Free trial limit reached.")
-        # نعيد أيضًا عدد المحاولات المتبقية للمتصفح ليحدث الواجهة
-        return jsonify({"error": error_message, "tries_left": tries_left}), 402 # 402: Payment Required
-
-    # خصم محاولة واحدة
-    session['tries_left'] -= 1
-    # ----------------------------------------------
-    
-    # ... (باقي التحقق من الملفات والتحليل كما هو)
-    
-    # ... (في نهاية التحليل الناجح)
-    # **تعديل:** أضف عدد المحاولات المتبقية في الاستجابة الناجحة
-    results = {
-        # ... (نتائج التحليل الأخرى)
-        "tries_left": session['tries_left'] # إرجاع عدد المحاولات المتبقية
-    }
-    
-    return jsonify(results) # تحويله إلى JSON
-# ... (باقي الكود)
 # =========================================================
-# 3. دوال تحليل الصور المساعدة (ELA)
+# 3. نقطة نهاية تحليل الأمن (الربط مع أبشر) - مُحدثة
 # =========================================================
 
-def perform_ela_analysis(image_stream, quality=90):
-    """
-    إجراء تحليل مستوى خطأ الانضغاط (ELA) على الصورة.
-    """
-    ela_base64_image = None
-    ela_trust_score = 0.0
-    ela_verdict = "❌ فشل تحليل ELA."
-    
+@app.route('/api/abshr/security-forensics', methods=['POST'])
+def abshr_security_forensics():
     try:
-        # 1. قراءة الصورة الأصلية
-        image_stream.seek(0)
-        original_img = Image.open(image_stream).convert('RGB')
-        
-        # 2. حفظ الصورة بجودة منخفضة (90)
-        temp_buffer = io.BytesIO()
-        original_img.save(temp_buffer, format='JPEG', quality=quality)
-        temp_buffer.seek(0)
-        
-        # 3. إعادة قراءة الصورة المضغوطة
-        compressed_img = Image.open(temp_buffer).convert('RGB')
-        
-        # 4. حساب الاختلاف (ELA)
-        ela_img = ImageChops.difference(original_img, compressed_img)
-        
-        # 5. تعزيز الصورة لجعل المناطق المتلاعب بها مرئية
-        # تحويل الصورة إلى مصفوفة NumPy
-        np_ela = np.array(ela_img, dtype=np.float32)
-        # تعزيز التباين (توسيع النطاق)
-        max_diff = np_ela.max()
-        if max_diff > 0:
-             np_ela = (np_ela / max_diff) * 255.0
-        
-        # 6. حساب درجة الثقة (محاكاة)
-        # مؤشر متوسط فرق البكسل (متوسط الضوضاء)
-        mean_diff = np.mean(np_ela) 
-        
-        # القيم المرجعية (مُحاكاة): الأصيل له قيمة متوسطة منخفضة
-        if mean_diff < 15: # أصيل
-            ela_trust_score = 95.0 - (mean_diff / 15.0) * 15.0
-            ela_verdict = f"✅ أصالة عالية. متوسط تباين ELA منخفض ({mean_diff:.2f})."
-        elif mean_diff > 35: # مزور
-            ela_trust_score = 10.0 + (35.0 / mean_diff) * 20.0
-            ela_verdict = f"⚠️ تباين ELA مرتفع جداً ({mean_diff:.2f}). يشير إلى تعديل كبير."
-        else: # حذر
-            ela_trust_score = 80.0 - ((mean_diff - 15) / 20.0) * 40.0
-            ela_verdict = f"🟡 تباين ELA متوسط ({mean_diff:.2f}). يُنصح بمزيد من التدقيق."
+        if 'image' not in request.files:
+            return jsonify({'status': 'error', 'message': 'لم يتم العثور على ملف الصورة.'}), 400
 
+        file = request.files['image']
+        image_stream = io.BytesIO(file.read())
         
-        # 7. تحويل صورة ELA إلى Base64
-        ela_img_scaled = Image.fromarray(np_ela.astype(np.uint8))
-        buffer = io.BytesIO()
-        ela_img_scaled.save(buffer, format="PNG")
-        ela_base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        # 1. تنفيذ التحليل الجنائي الكامل
+        full_analysis_data = analyze_full_forensics(image_stream)
         
-        # الإصلاح: التأكد من أن جميع القيم الرقمية هي float
-        return ela_verdict, float(ela_trust_score), ela_base64_image
-        
+        # 2. حفظ نتائج التحليل الكاملة في جلسة المستخدم (لتوليد التقرير لاحقاً)
+        # يجب تخزين البيانات في الجلسة لاستخدامها في /api/report
+        session['last_analysis_results'] = full_analysis_data 
+        session['analysis_timestamp'] = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # 3. إرجاع النتيجة الأساسية لـ واجهة أبشر
+        response_to_abshr = {
+            'status': 'success',
+            # درجة الثقة النهائية (الختم الأمني)
+            'confidence_score': full_analysis_data['final_score'], 
+            # القرار الأمني (CLEAN, CAUTION, FORGED)
+            'abshr_verdict': full_analysis_data['abshr_verdict'], 
+            # URL التقرير الذي سيستدعيه الزر في الواجهة
+            'report_url': '/api/report' 
+        }
+
+        return jsonify(response_to_abshr)
+
+    except RequestEntityTooLarge:
+        return jsonify({'status': 'error', 'message': 'حجم الملف يتجاوز الحد الأقصى (5MB).'}), 413
     except Exception as e:
-        print(f"Error in ELA analysis: {e}")
-        return f"❌ فشل حرج في تحليل ELA: {str(e)}", 0.0, None
+        print(f"Error during forensics analysis: {e}")
+        return jsonify({'status': 'error', 'message': f'فشل في عملية التحليل: {str(e)}'}), 500
 
 
 # =========================================================
-# 4. دالة التحليل الرئيسية التي تجمع الكل
+# 4. نقطة نهاية توليد تقرير PDF (المطلوبة!) - تمت الإضافة
 # =========================================================
 
-def run_full_analysis(image_stream):
-    """تنسيق وتشغيل جميع التحليلات."""
+@app.route('/api/report', methods=['GET'])
+def generate_report():
     
-    # 1. تحليل ELA
-    ela_message, ela_score, ela_base64_image = perform_ela_analysis(image_stream)
+    # 1. التحقق من وجود نتائج تحليل سابقة في الجلسة
+    analysis_data = session.get('last_analysis_results')
+    timestamp = session.get('analysis_timestamp', 'غير متوفر')
     
-    # 2. تحليل PRNU (يجب إعادة تعيين مؤشر الدفق)
-    image_stream.seek(0) 
-    prnu_message, prnu_score, prnu_base64_image = extract_noise_pattern(image_stream) 
-    
-    # 3. تحليل الذكاء الاصطناعي (يجب إعادة تعيين مؤشر الدفق)
-    image_stream.seek(0)
-    # ملاحظة: نمرر درجة ELA و PRNU لمساعدة نموذج AI في دمج القرار
-    final_combined_score, ai_message, gradcam_base64_image, ai_score_raw = analyze_with_ai(
-        image_stream, GLOBAL_AI_MODEL, ela_score, prnu_score
-    )
-    
-    # 4. تجميع النتائج
-    results = {
-        'ela_message': ela_message,
-        'ela_score': float(ela_score),
-        'ela_base64_image': ela_base64_image,
-        
-        'prnu_message': prnu_message,
-        'prnu_score': float(prnu_score),
-        'prnu_base64_image': prnu_base64_image,
-        
-        'ai_message': ai_message,
-        'ai_score_raw': float(ai_score_raw),
-        'gradcam_base64_image': gradcam_base64_image,
-        
-        # القرار النهائي المدمج (من دالة AI)
-        'final_combined_score': float(final_combined_score)
-    }
-    
-    return results
+    if not analysis_data:
+        return jsonify({'status': 'error', 'message': 'لا توجد نتائج تحليل سابقة لإصدار تقرير.'}), 404
 
-# =========================================================
-# 5. دوال Flask والـ API
-# =========================================================
-
-app = Flask(__name__)
-# تحديد حجم الملف الأقصى بـ 10 ميجابايت (للسلامة)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024 
-CORS(app) 
-
-# ... (باقي دوال generate_pdf_report و routes) ...
-def generate_pdf_report(data):
-    """توليد تقرير PDF مفصل من بيانات التحليل."""
-    
-    # تنسيق التاريخ والوقت
-    current_datetime = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+    # 2. تهيئة ملف PDF
     buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
+    p = canvas.Canvas(buffer, pagesize=A4)
+    width, height = A4
     
-    p.setFont(ARABIC_FONT, 24)
-    p.drawString(400, 750, "تقرير تحليل أصالة الصورة (منصة صِدق)")
-    
-    p.setFont(ARABIC_FONT, 14)
-    p.drawString(72, 720, f"تاريخ التقرير: {current_datetime}")
-    p.drawString(72, 700, f"القرار النهائي المدمج: {data.get('final_combined_score', 0.0):.2f}%")
-    
-    # إضافة الأقسام
-    y_position = 650
-    p.setFont(ARABIC_FONT, 16)
-    p.drawString(72, y_position, "1. ملخص نتائج التحليل الرقمي:")
-    
-    y_position -= 30
-    p.setFont(ARABIC_FONT, 12)
-    p.drawString(72, y_position, f"درجة ELA: {data.get('ela_score', 0.0):.2f}% - الرسالة: {data.get('ela_message', 'N/A')}")
-    y_position -= 20
-    p.drawString(72, y_position, f"درجة PRNU: {data.get('prnu_score', 0.0):.2f}% - الرسالة: {data.get('prnu_message', 'N/A')}")
-    y_position -= 20
-    p.drawString(72, y_position, f"درجة الذكاء الاصطناعي: {data.get('ai_score_raw', 0.0):.2f}% - الرسالة: {data.get('ai_message', 'N/A')}")
-    
-    # إضافة صورة ELA
-    y_position -= 40
-    p.setFont(ARABIC_FONT, 14)
-    p.drawString(72, y_position, "2. تحليل مستوى خطأ الانضغاط (ELA):")
-    y_position -= 10
-    
-    try:
-        if data.get('ela_base64_image'):
-            img_data = base64.b64decode(data['ela_base64_image'])
-            img = Image.open(io.BytesIO(img_data))
-            # الحجم: 200x200
-            p.drawInlineImage(img, 72, y_position - 200, width=200, height=200)
-            y_position -= 210
-    except Exception as e:
-        p.drawString(72, y_position - 20, f"فشل عرض صورة ELA: {str(e)}")
-        y_position -= 40
-    
-    # إضافة صورة PRNU
-    p.setFont(ARABIC_FONT, 14)
-    p.drawString(300, y_position, "3. تحليل نمط ضوضاء المستشعر (PRNU):")
-    y_position -= 10
-    
-    try:
-        if data.get('prnu_base64_image'):
-            img_data = base64.b64decode(data['prnu_base64_image'])
-            img = Image.open(io.BytesIO(img_data))
-            p.drawInlineImage(img, 300, y_position - 200, width=200, height=200)
-            y_position -= 210
-    except Exception as e:
-        p.drawString(300, y_position - 20, f"فشل عرض صورة PRNU: {str(e)}")
-        y_position -= 40
-        
-    # إضافة خريطة Grad-CAM (في صفحة جديدة إذا لم يكن هناك مساحة)
-    if y_position < 150:
-        p.showPage()
-        y_position = 750
-    
-    p.setFont(ARABIC_FONT, 14)
-    p.drawString(72, y_position, "4. خريطة تركيز الذكاء الاصطناعي (Grad-CAM):")
-    y_position -= 10
-    
-    try:
-        if data.get('gradcam_base64_image'):
-            img_data = base64.b64decode(data['gradcam_base64_image'])
-            img = Image.open(io.BytesIO(img_data))
-            # يمكن أن تكون الصورة أكبر حجماً
-            p.drawInlineImage(img, 72, y_position - 250, width=400, height=250)
-            y_position -= 260
-        else:
-            p.drawString(72, y_position - 20, "لم يتم توليد خريطة Grad-CAM.")
-            y_position -= 40
-    except Exception as e:
-        p.drawString(72, y_position - 20, f"فشل عرض خريطة Grad-CAM: {str(e)}")
-        y_position -= 40
-        
-    p.save()
-    pdf_bytes = buffer.getvalue()
-    buffer.close()
-    return pdf_bytes
-# في app_flask.py، داخل دالة analyze_endpoint
-@app.route('/api/analyze', methods=['POST'])
-def analyze_endpoint():
-    """نقطة نهاية لتحليل الصورة."""
+    # إعداد الخط الأساسي
+    font_size = 12
+    p.setFont(ARABIC_FONT, font_size)
+    line_height = font_size * 1.5
+    margin = 50
+    x, y = width - margin, height - margin
 
-    # ----------------------------------------------
-    # 🌟 منطق التحقق من المحاولات المجانية 🌟
-    # ----------------------------------------------
+    # 3. رأس التقرير والختم
+    p.setFont(ARABIC_FONT, 20)
+    p.drawRightString(x, y, "تقرير الأدلة الجنائية لخدمة صِدق (Sidq Report)")
+    y -= line_height * 2
     
-    # 1. التحقق من حالة الاشتراك
-    is_subscribed = session.get('is_subscribed', False)
+    p.setFont(ARABIC_FONT, 10)
+    p.drawRightString(x, y, f"تاريخ ووقت التحليل: {timestamp}")
+    y -= line_height
 
-    if not is_subscribed:
-        # إذا لم يكن مشتركاً، طبق منطق المحاولات المجانية
-        FREE_TRIES_LIMIT = 1 
-        
-        if 'tries_left' not in session:
-            session['tries_left'] = FREE_TRIES_LIMIT
-        
-        tries_left = session['tries_left']
-
-        if tries_left <= 0:
-            error_message = "⚠️ انتهت محاولتك المجانية. الرجاء الترقية/الاشتراك للمزيد من التحليلات."
-            print("❌ DENIED: Free trial limit reached.")
-            return jsonify({"error": error_message, "tries_left": tries_left}), 402 # 402: Payment Required
-
-        # خصم محاولة واحدة
-        session['tries_left'] -= 1
-        print(f"✅ Free try used. Tries left: {session['tries_left']}")
+    # 4. قسم القرار الأمني (الختم)
+    p.setFillColor(colors.white)
     
+    if analysis_data['abshr_verdict'] == 'CLEAN':
+        box_color = colors.green
+        verdict_text = "✅ أصالة مُؤكَّدة (CLEAN)"
+    elif analysis_data['abshr_verdict'] == 'CAUTION':
+        box_color = colors.orange
+        verdict_text = "⚠️ احتمالية تلاعب (CAUTION)"
     else:
-        # المشتركين لديهم محاولات غير محدودة
-        session['tries_left'] = -1 # قيمة رمزية تدل على اللانهاية
-        print("✅ SUBSCRIBER: Unlimited access granted.")
-    # ----------------------------------------------
+        box_color = colors.red
+        verdict_text = "❌ تزوير مُؤكَّد (FORGED)"
+        
+    p.setFillColor(box_color)
+    p.rect(margin, y - 50, width - 2 * margin, 60, fill=1) # رسم مستطيل خلفي
     
-    # ... (بقية كود التحليل)
-    
-    # ... (في نهاية التحليل الناجح)
-    results = {
-        # ... (نتائج التحليل الأخرى)
-        "tries_left": session['tries_left'] 
-    }
-    
-    return jsonify(results)
+    p.setFillColor(colors.white)
+    p.setFont(ARABIC_FONT, 18)
+    p.drawCentredString(width / 2, y - 30, verdict_text)
+    y -= line_height * 4
 
-@app.route('/api/download_report', methods=['POST'])
-def download_report_endpoint():
-    """نقطة نهاية تحميل التقرير."""
-    data = request.json
-    if not data:
-        return jsonify({"error": "No data provided for report generation"}), 400
-    try:
-        pdf_bytes = generate_pdf_report(data)
-        return send_file(
-            io.BytesIO(pdf_bytes),
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f"Sedq_Analysis_Report_{datetime.date.today()}.pdf"
-        )
-    except Exception as e:
-        print(f"Error in PDF generation endpoint: {e}")
-        return jsonify({"error": f"فشل توليد التقرير: {str(e)}"}), 500
+    # 5. جدول المعلومات الأساسية
+    p.setFillColor(colors.black)
+    p.setFont(ARABIC_FONT, font_size)
+    p.drawRightString(x, y, "أ. البيانات الأساسية للوثيقة")
+    y -= line_height
+    
+    # دالة بسيطة لرسم سطر المعلومات
+    def draw_info_line(key, value):
+        nonlocal y
+        p.setFont(ARABIC_FONT, font_size)
+        p.drawRightString(x, y, key)
+        p.drawString(margin + 150, y, str(value))
+        y -= line_height
+    
+    draw_info_line("الدرجة النهائية:", f"{analysis_data['final_score']:.2f}%")
+    draw_info_line("صانع الكاميرا:", analysis_data['metadata']['make'])
+    draw_info_line("طراز الكاميرا:", analysis_data['metadata']['model'])
+    draw_info_line("تاريخ الالتقاط:", analysis_data['metadata']['datetime'])
+    draw_info_line("الأبعاد (بكسل):", analysis_data['metadata']['size'])
+    draw_info_line("صيغة الملف:", analysis_data['metadata']['format'])
+    y -= line_height
 
+    # 6. قسم نتائج التحليل التفصيلية (التحليل الجنائي)
+    p.drawRightString(x, y, "ب. نتائج التحليل الجنائي")
+    y -= line_height
+    
+    # دالة لرسم قسم التحليل
+    def draw_analysis_section(title, score, verdict, base64_img):
+        nonlocal y
+        p.setFillColor(colors.blue)
+        p.setFont(ARABIC_FONT, font_size)
+        p.drawRightString(x, y, title)
+        y -= line_height
+        
+        p.setFillColor(colors.black)
+        draw_info_line("الدرجة:", f"{score:.2f}%")
+        draw_info_line("الخلاصة:", verdict)
+        y -= line_height
+        
+        # عرض صورة الدليل الجنائي
+        if base64_img:
+            try:
+                img_data = base64.b64decode(base64_img)
+                img_stream = io.BytesIO(img_data)
+                img = ImageReader(img_stream)
+                # رسم الصورة (300 بكسل عرض)
+                img_w, img_h = 300, 300 * (img.getSize()[1] / img.getSize()[0])
+                
+                # التحقق من تجاوز حدود الصفحة
+                if y - img_h < margin:
+                    p.showPage()
+                    p.setFont(ARABIC_FONT, font_size)
+                    y = height - margin - line_height * 2 # بدء صفحة جديدة
+                
+                p.drawInlineImage(img, width - margin - img_w, y - img_h, width=img_w, height=img_h)
+                y -= img_h + line_height
+            except Exception as e:
+                p.setFillColor(colors.red)
+                p.drawRightString(x, y, f"❌ خطأ في عرض الصورة: {e}")
+                y -= line_height
+                p.setFillColor(colors.black)
+
+    # التحليل حسب الترتيب
+    draw_analysis_section("PRNU (تحليل ضوضاء الكاميرا)", 
+                          analysis_data['prnu_score'], 
+                          analysis_data['prnu_verdict'], 
+                          analysis_data['prnu_img_base64'])
+                          
+    draw_analysis_section("ELA (تحليل مستوى الخطأ)", 
+                          analysis_data['ela_score'], 
+                          analysis_data['ela_verdict'], 
+                          analysis_data['ela_img_base64'])
+
+    draw_analysis_section("AI/GradCAM (الذكاء الاصطناعي)", 
+                          analysis_data['ai_score'], 
+                          analysis_data['ai_verdict'], 
+                          analysis_data['gradcam_img_base64'])
+                          
+    # 7. الصورة الأصلية في نهاية التقرير
+    if analysis_data['original_img_base64']:
+        p.showPage() # صفحة جديدة للصورة الأصلية
+        y = height - margin
+        p.setFont(ARABIC_FONT, 14)
+        p.drawRightString(x, y, "ج. الصورة الأصلية المرسلة للتحليل")
+        y -= line_height * 2
+        
+        try:
+            img_data = base64.b64decode(analysis_data['original_img_base64'])
+            img_stream = io.BytesIO(img_data)
+            img = ImageReader(img_stream)
+            
+            # تحجيم الصورة لتناسب عرض الصفحة (بحد أقصى)
+            img_w, img_h = width - 2 * margin, (width - 2 * margin) * (img.getSize()[1] / img.getSize()[0])
+            
+            # رسم الصورة في منتصف الصفحة
+            p.drawInlineImage(img, margin, y - img_h, width=img_w, height=img_h)
+            y -= img_h
+        except Exception as e:
+            p.setFillColor(colors.red)
+            p.drawRightString(x, y, f"❌ خطأ في عرض الصورة الأصلية: {e}")
+            
+    # 8. حفظ التقرير وإرجاعه
+    p.save()
+    buffer.seek(0)
+    
+    # إرجاع ملف PDF للمتصفح
+    return send_file(buffer, as_attachment=True, download_name='Sidq_Report.pdf', mimetype='application/pdf')
+
+
+# =========================================================
+# 5. نقاط نهاية خدمة الملفات الثابتة والصفحات
+# =========================================================
 
 @app.route('/')
 def index():
     return send_file('index.html')
 
+@app.route('/abshr_security_demo.html')
+def abshr_demo_page():
+    return send_file('abshr_security_demo.html')
+
 @app.route('/<path:filename>')
 def serve_static(filename):
     if os.path.exists(filename):
-        # التحصين ضد خطأ في MIME Type لبعض أنواع الملفات
         return send_file(filename)
     else:
         return "404 Not Found", 404
 
-if __name__ == '__main__':
-    # وضع الخادم على الوضع الافتراضي للـ Demo
-    app.run(debug=True, host='127.0.0.1', port=5000)
-    # ... (في نهاية ملف app_flask.py، بعد الدالة analyze_endpoint)
-
-@app.route('/api/check_tries', methods=['GET'])
-def check_tries_endpoint():
-    """نقطة نهاية لمعرفة عدد المحاولات المتبقية عند تحميل الصفحة."""
-    FREE_TRIES_LIMIT = 1 
-    if 'tries_left' not in session:
-        session['tries_left'] = FREE_TRIES_LIMIT
-        
-    return jsonify({"tries_left": session['tries_left']})
-
-# في ملف app_flask.py، أضف الاستيراد وتهيئة Stripe
-import stripe # <-- إضافة هذا السطر
-# ⚠️ استبدل المفتاح التالي بمفتاحك السري الحقيقي من Stripe
-stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") 
-
-
-@app.route('/api/create-checkout-session', methods=['POST'])
-def create_checkout_session():
-    """تنشئ جلسة دفع مع Stripe وتحول المستخدم إليها."""
-    try:
-        data = request.json
-        plan_id = data.get('plan_id') # ستكون 'monthly' أو 'yearly' من scripts.js
-
-        # تحديد سعر المنتج بناءً على الخطة المختارة (يجب أن تتطابق مع أسعارك في Stripe)
-        # مثال:
-        if plan_id == 'monthly':
-            price_id = 'price_XXX_monthly' # Price ID من لوحة تحكم Stripe
-        elif plan_id == 'yearly':
-            price_id = 'price_YYY_yearly' # Price ID من لوحة تحكم Stripe
-        else:
-            return jsonify({'error': 'Invalid plan selected'}), 400
-
-        # إنشاء جلسة الدفع في Stripe
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[
-                {
-                    'price': price_id,
-                    'quantity': 1,
-                }
-            ],
-            mode='subscription', # أو 'payment' إذا كان دفع لمرة واحدة
-            success_url=request.url_root + 'index.html?payment=success', # عنوان العودة عند النجاح
-            cancel_url=request.url_root + 'payment.html?payment=cancelled', # عنوان العودة عند الإلغاء
-        )
-        
-        # إرسال رابط Stripe إلى الواجهة الأمامية
-        return jsonify({
-            'session_id': session.id,
-            'stripe_checkout_url': session.url
-        })
-
-    except Exception as e:
-        print(f"Stripe Session Error: {e}")
-        return jsonify(error=str(e)), 500
-
-
-# ----------------------------------------------------------------
-# نقطة نهاية الاستماع لحدث Stripe (Webhook) - ضرورية لتفعيل الاشتراك
-# ----------------------------------------------------------------
-@app.route('/stripe-webhook', methods=['POST'])
-def stripe_webhook():
-    payload = request.data
-    sig_header = request.headers.get('stripe-signature')
-    event = None
-
-    try:
-        # التحقق من توقيع الحدث
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, os.environ.get("STRIPE_WEBHOOK_SECRET")
-        )
-    except ValueError as e:
-        # توقيع غير صالح
-        return 'Invalid payload', 400
-    except stripe.error.SignatureVerificationError as e:
-        # توقيع غير صالح
-        return 'Invalid signature', 400
-
-    # معالجة حدث إتمام الدفع بنجاح
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
-        
-        # ⚠️ **الخطوة الحاسمة:** يجب عليك هنا ربط هذا الاشتراك
-        # بمعرّف المستخدم الحقيقي في قاعدة بياناتك (إذا كنت تستخدم قاعدة بيانات)
-        
-        # بما أننا لا نستخدم قاعدة بيانات، سنكتفي بالتأكيد اللفظي:
-        print(f"💰 PAYMENT SUCCESS: Session {session.id} completed. Subscription should be activated.")
-        
-    return jsonify({'status': 'success'}), 200
-@app.route('/api/activate_subscription', methods=['POST'])
-def activate_subscription_endpoint():
-    """نقطة نهاية محاكاة تفعيل الاشتراك (للاستخدام المؤقت مع الجلسات)."""
-    
-    # 1. تحقق من بيانات الفورم (للتأكد من اختيار خطة)
-    data = request.json
-    selected_plan = data.get('plan')
-    
-    if not selected_plan:
-        return jsonify({"error": "الرجاء اختيار باقة دفع صالحة"}), 400
-
-    # 2. 🌟 تفعيل الاشتراك في الجلسة 🌟
-    # هذا هو العنصر الأساسي الذي يمنح المستخدم وصولاً غير محدود.
-    session['is_subscribed'] = True
-    session['tries_left'] = -1 # قيمة رمزية لـ "غير محدود"
-    
-    # 3. إرجاع تأكيد بالنجاح
-    return jsonify({
-        "success": True, 
-        "message": f"تم تفعيل اشتراكك بنجاح في خطة: {selected_plan}",
-        "is_subscribed": session['is_subscribed']
-    })
-
-
-@app.route('/api/check_tries', methods=['GET'])
-def check_tries_endpoint():
-    """نقطة نهاية للتحقق الأولي من عدد المحاولات/حالة الاشتراك."""
-    FREE_TRIES_LIMIT = 1 
-    
-    # التحقق أولاً من الاشتراك الدائم (المؤقت)
-    if session.get('is_subscribed', False):
-        return jsonify({"tries_left": -1, "is_subscribed": True})
-        
-    if 'tries_left' not in session:
-        session['tries_left'] = FREE_TRIES_LIMIT
-        
-    return jsonify({"tries_left": session['tries_left'], "is_subscribed": False})
-
-# ... (بقية الكود)
+# =========================================================
+# 6. تشغيل التطبيق
+# =========================================================
 
 if __name__ == '__main__':
-    # هذا الجزء يستخدم للتشغيل المحلي فقط.
-    # Gunicorn يتجاهل هذا الجزء ويستخدم الأمر في Procfile
-    app.run(debug=True, host='0.0.0.0')
+    # يجب تشغيل هذا الخادم في وضع التشغيل (Debug=True) في العرض التقديمي
+    # In a production environment, this should be False
+    app.run(debug=True, port=5000)

@@ -260,4 +260,43 @@ input[type="text"], input[type="password"], textarea, select {
 /* إخفاء النتائج افتراضياً */
 .hidden {
     display: none;
+}/* ========================================================= */
+/* ⚠️ التنسيقات العامة (ضمن styles.css) لتعكس الألوان الجديدة */
+/* ========================================================= */
+
+:root {
+    /* ألوان النجاح/الفشل لتتناسب مع الواجهة الرسمية */
+    --color-success: #388E3C;   /* أخضر أعمق */
+    --color-caution: #FBC02D;   /* أصفر للعرض */
+    --color-error: #D32F2F;     /* أحمر أعمق */
+}
+
+/* الأزرار الأساسية (لتعمل مع الألوان الجديدة) */
+.btn-primary {
+    background-color: var(--abshr-main-color); /* استخدام لون أبشر الأخضر */
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+.btn-primary:hover {
+    background-color: #006b3e; /* ظل أغمق عند المرور */
+}
+
+/* الأزرار الثانوية (لو زر التحميل) */
+.btn-secondary {
+    background-color: #E0E0E0;
+    color: #333;
+    border: 1px solid #BDBDBD;
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+.btn-secondary:hover {
+    background-color: #CCC;
 }
